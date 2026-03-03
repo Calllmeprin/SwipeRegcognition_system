@@ -3,6 +3,7 @@ import os
 import copy
 import argparse
 from typing import List, Any, Dict, Tuple, Union
+from collections import deque
 
 import time
 import pyautogui 
@@ -95,12 +96,13 @@ def main() -> None:
 
     # FPS計測モジュール
     cvFpsCalc: CvFpsCalc = CvFpsCalc(buffer_len=10)
-
-    # ===== Swipe Control Variables =====
+    x_history = deque(maxlen=5)
     prev_x = None
     last_gesture_time = 0
-    gesture_cooldown = 0.2
+    gesture_cooldown = 0.2 
     threshold = 0.1
+    current_x = None
+    current_time = time.time()
 
     if use_world_landmark:
         import matplotlib.pyplot as plt
@@ -129,29 +131,31 @@ def main() -> None:
 
         detection_result = detector.detect(rgb_frame)
 
-        # ===== SWIPE DETECTION =====
         if detection_result.hand_landmarks:
             hand_landmarks = detection_result.hand_landmarks[0]
-            wrist = hand_landmarks[0]
+            wrist = hand_landmarks[8]
             current_x = wrist.x
+            x_history.append(current_x)
+            smoothed_x = sum(x_history) / len(x_history)
             current_time = time.time()
 
-            if prev_x is not None:
-                delta_x = current_x - prev_x
+        if prev_x is not None and current_x is not None:
+            delta_x = smoothed_x - prev_x
             
             if current_time - last_gesture_time > gesture_cooldown:
 
-                    if delta_x > 0.10:
-                        print("Next Slide")
-                        pyautogui.press("right")
-                        last_gesture_time = current_time                        
+                if delta_x > 0.14:
+                    print("Next Slide")
+                    pyautogui.press("right")
+                    last_gesture_time = current_time
 
-                    elif delta_x < -0.12:
-                        print("Previous Slide")
-                        pyautogui.press("left")
-                        last_gesture_time = current_time
-                        
-            prev_x = current_x
+                elif delta_x < -0.14:
+
+                    print("Previous Slide")
+                    pyautogui.press("left")
+                    last_gesture_time = current_time
+
+        prev_x = smoothed_x
 
         # 外接矩形計算
         bboxes = calc_bounding_rect(frame, detection_result)
@@ -167,7 +171,6 @@ def main() -> None:
 
         cv2.imshow('MediaPipe Hand Landmarks Detection Demo', debug_image)
 
-        # ESC to exit
         key = cv2.waitKey(1) & 0xFF
         if key == 27:
             break
